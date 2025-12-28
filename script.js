@@ -1,307 +1,72 @@
-import { GoogleGenAI } from "@google/genai";
-
-/**
- * ESTADO GLOBAL DA APLICAÇÃO
- */
-const state = {
-    apiKey: localStorage.getItem('vinci_api_key') || '',
-    projects: JSON.parse(localStorage.getItem('vinci_projects') || '[]'),
-    currentProject: {
-        id: Date.now().toString(),
-        name: 'Novo Vídeo',
-        type: 'short', // short ou long
-        scenes: [],
-        finalVideoUrl: '',
-        subtitles: []
-    },
-    isProcessing: false,
-    recorder: null,
-    audioBlob: null
-};
-
-// Seletores DOM
-const els = {
-    apiKeyInput: document.getElementById('api-key-input'),
-    saveKeyBtn: document.getElementById('save-key-btn'),
-    clearKeyBtn: document.getElementById('clear-key-btn'),
-    apiStatus: document.getElementById('api-status'),
-    projectNameInput: document.getElementById('project-name-input'),
-    storyboardList: document.getElementById('storyboard-list'),
-    newScenePrompt: document.getElementById('new-scene-prompt'),
-    addSceneBtn: document.getElementById('add-scene-btn'),
-    generateBtn: document.getElementById('generate-final-btn'),
-    mainPlayer: document.getElementById('main-player'),
-    loadingSpinner: document.getElementById('loading-spinner'),
-    loadingMsg: document.getElementById('loading-msg'),
-    recordBtn: document.getElementById('record-btn'),
-    audioType: document.getElementById('audio-type'),
-    micControls: document.getElementById('mic-controls'),
-    uploadControls: document.getElementById('upload-controls'),
-    audioFile: document.getElementById('audio-file'),
-    exportBar: document.getElementById('export-bar'),
-    downloadVideoBtn: document.getElementById('download-video-btn'),
-    downloadSrtBtn: document.getElementById('download-srt-btn'),
-    projectList: document.getElementById('project-list'),
-    newProjectBtn: document.getElementById('new-project-btn')
-};
-
-/**
- * INICIALIZAÇÃO
- */
-function init() {
-    if (state.apiKey) {
-        els.apiKeyInput.value = '********';
-        updateApiStatus('Chave Ativa', 'status-ok');
-    }
-    
-    renderStoryboard();
-    renderProjectList();
-    bindEvents();
+:root {
+    --bg: #050505;
+    --glass: rgba(255, 255, 255, 0.03);
+    --border: rgba(255, 255, 255, 0.08);
+    --primary: #6366f1;
+    --accent: #a855f7;
+    --danger: #ef4444;
+    --text: #f8fafc;
+    --text-dim: #94a3b8;
 }
 
-/**
- * EVENTOS
- */
-function bindEvents() {
-    els.saveKeyBtn.onclick = () => {
-        const key = els.apiKeyInput.value.trim();
-        if (!key || key === '********') return;
-        state.apiKey = key;
-        localStorage.setItem('vinci_api_key', key);
-        els.apiKeyInput.value = '********';
-        updateApiStatus('Salvo com sucesso', 'status-ok');
-    };
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; height: 100vh; overflow: hidden; }
 
-    els.clearKeyBtn.onclick = () => {
-        state.apiKey = '';
-        localStorage.removeItem('vinci_api_key');
-        els.apiKeyInput.value = '';
-        updateApiStatus('Chave removida', 'status-err');
-    };
+#app-container { display: flex; height: 100vh; }
 
-    els.audioType.onchange = (e) => {
-        els.micControls.classList.toggle('hidden', e.target.value !== 'mic');
-        els.uploadControls.classList.toggle('hidden', e.target.value !== 'upload');
-    };
+.glass { background: var(--glass); backdrop-filter: blur(12px); border: 1px solid var(--border); }
 
-    els.recordBtn.onclick = async () => {
-        if (!state.recorder) {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            state.recorder = new MediaRecorder(stream);
-            let chunks = [];
-            state.recorder.ondataavailable = e => chunks.push(e.data);
-            state.recorder.onstop = () => {
-                state.audioBlob = new Blob(chunks, { type: 'audio/webm' });
-                els.recordBtn.innerHTML = '<i class="fa-solid fa-check"></i> Gravado';
-            };
-            state.recorder.start();
-            els.recordBtn.innerHTML = '<i class="fa-solid fa-stop"></i> Parar';
-        } else {
-            state.recorder.stop();
-            state.recorder = null;
-        }
-    };
+/* Sidebar */
+#sidebar { width: 320px; padding: 25px; display: flex; flex-direction: column; gap: 30px; }
+.brand { display: flex; align-items: center; gap: 12px; }
+.logo-icon { width: 42px; height: 42px; background: var(--primary); border-radius: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px rgba(99, 102, 241, 0.4); }
+.gradient-text { background: linear-gradient(135deg, var(--primary), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800; font-size: 1.6rem; letter-spacing: -0.5px; }
 
-    els.addSceneBtn.onclick = () => {
-        const prompt = els.newScenePrompt.value.trim();
-        if (!prompt) return alert('Descreva a cena!');
-        
-        const scene = {
-            id: Math.random().toString(36).substr(2, 9),
-            prompt: prompt,
-            audioType: els.audioType.value,
-            audioData: state.audioBlob,
-            videoUrl: ''
-        };
-        
-        state.currentProject.scenes.push(scene);
-        els.newScenePrompt.value = '';
-        state.audioBlob = null;
-        els.recordBtn.innerHTML = '<i class="fa-solid fa-microphone"></i> Gravar';
-        renderStoryboard();
-    };
+label { font-size: 0.7rem; text-transform: uppercase; font-weight: 900; color: var(--text-dim); display: block; margin-bottom: 8px; letter-spacing: 1px; }
 
-    els.generateBtn.onclick = async () => {
-        if (state.isProcessing) return;
-        if (!state.apiKey) return alert('Configure sua API Key primeiro!');
-        if (state.currentProject.scenes.length === 0) return alert('Adicione ao menos uma cena!');
+/* Main Workspace */
+#workspace { flex: 1; display: flex; flex-direction: column; }
+header { height: 90px; padding: 0 40px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
 
-        await generateUnifiedVideo();
-    };
+#project-name { background: transparent; border: none; font-size: 1.4rem; font-weight: 800; color: white; outline: none; width: 300px; }
+.project-settings { display: flex; gap: 10px; margin-top: 5px; }
+select, input, textarea { background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: white; border-radius: 8px; padding: 8px; font-size: 0.85rem; outline: none; }
 
-    els.downloadVideoBtn.onclick = () => downloadBlob(state.currentProject.finalVideoUrl, 'video.mp4');
-    els.downloadSrtBtn.onclick = () => exportSRT();
-    
-    els.newProjectBtn.onclick = () => {
-        state.currentProject = { id: Date.now().toString(), name: 'Novo Vídeo', scenes: [] };
-        els.projectNameInput.value = state.currentProject.name;
-        els.exportBar.classList.add('hidden');
-        renderStoryboard();
-    };
-}
+.content-scroll { flex: 1; overflow-y: auto; padding: 40px; }
+.max-width-wrapper { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
 
-/**
- * LÓGICA DE GERAÇÃO (UNIFICADA)
- */
-async function generateUnifiedVideo() {
-    toggleLoading(true, "Iniciando Processamento...");
-    const ai = new GoogleGenAI({ apiKey: state.apiKey });
-    let currentVideo = null; // Para extensão
+/* Storyboard */
+#storyboard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+.scene-card { border-radius: 20px; overflow: hidden; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.scene-card:hover { border-color: var(--primary); transform: translateY(-4px); }
 
-    try {
-        for (let i = 0; i < state.currentProject.scenes.length; i++) {
-            const scene = state.currentProject.scenes[i];
-            toggleLoading(true, `Sintetizando Cena ${i+1}...`);
+.scene-media-preview { aspect-ratio: 16/9; background: #000; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.scene-media-preview video, .scene-media-preview img { width: 100%; height: 100%; object-fit: cover; }
+.media-placeholder { opacity: 0.2; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 
-            let config = {
-                model: 'veo-3.1-fast-generate-preview',
-                prompt: scene.prompt,
-                config: {
-                    numberOfVideos: 1,
-                    resolution: '720p',
-                    aspectRatio: '16:9'
-                }
-            };
+.scene-body { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.scene-prompt { width: 100%; height: 80px; resize: none; border-color: transparent; transition: 0.2s; }
+.scene-prompt:focus { border-color: var(--primary); background: rgba(255,255,255,0.08); }
 
-            // Se for a segunda cena em diante, estender o vídeo anterior
-            if (currentVideo) {
-                config.video = currentVideo;
-            }
+.media-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.btn-upload { font-size: 0.7rem; padding: 8px; background: rgba(255,255,255,0.05); color: var(--text-dim); text-align: center; border-radius: 6px; cursor: pointer; border: 1px dashed var(--border); transition: 0.2s; }
+.btn-upload:hover { border-color: var(--primary); color: white; }
 
-            let operation = await ai.models.generateVideos(config);
-            
-            // Polling
-            while (!operation.done) {
-                await new Promise(r => setTimeout(r, 10000));
-                operation = await ai.operations.getVideosOperation({ operation: operation });
-            }
+/* Buttons */
+button { cursor: pointer; border: none; border-radius: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s; }
+.btn-primary { background: var(--primary); color: white; padding: 12px 24px; }
+.btn-accent { background: var(--accent); color: white; padding: 12px 28px; box-shadow: 0 0 20px rgba(168, 85, 247, 0.3); }
+.btn-primary-outline { background: transparent; border: 1px solid var(--border); color: var(--text); padding: 10px 20px; }
+.btn-primary-outline:hover { background: var(--primary); border-color: var(--primary); }
+.btn-danger { background: rgba(239, 68, 68, 0.1); color: var(--danger); padding: 8px; }
+.btn-danger:hover { background: var(--danger); color: white; }
+.btn-sm { padding: 6px 12px; font-size: 0.75rem; }
 
-            const videoMeta = operation.response?.generatedVideos?.[0]?.video;
-            currentVideo = videoMeta; // Atualiza para a próxima extensão
-            
-            // Atualizar status na UI
-            scene.videoUrl = videoMeta.uri;
-        }
+.hidden { display: none !important; }
+.custom-scrollbar::-webkit-scrollbar { width: 6px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #222; border-radius: 10px; }
 
-        // Finalizar e Baixar o arquivo completo
-        toggleLoading(true, "Finalizando arquivo único...");
-        const finalResp = await fetch(`${currentVideo.uri}&key=${state.apiKey}`);
-        const finalBlob = await finalResp.blob();
-        state.currentProject.finalVideoUrl = URL.createObjectURL(finalBlob);
-        
-        // Gerar Legendas Sincronizadas
-        toggleLoading(true, "Gerando Legendas...");
-        await generateSubtitles(ai);
-
-        els.mainPlayer.src = state.currentProject.finalVideoUrl;
-        els.exportBar.classList.remove('hidden');
-        saveProject();
-        alert("Vídeo Final Gerado com Sucesso!");
-
-    } catch (err) {
-        console.error(err);
-        if (err.status === 429) alert("Erro de Quota: Muitas requisições. Aguarde 1 minuto.");
-        else alert("Erro durante a geração: " + err.message);
-    } finally {
-        toggleLoading(false);
-    }
-}
-
-async function generateSubtitles(ai) {
-    const fullPrompt = state.currentProject.scenes.map(s => s.prompt).join(" ");
-    const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Gere legendas sincronizadas (JSON) para este roteiro: "${fullPrompt}". Formato: [{startTime: 0, endTime: 5, text: "..."}]`,
-        config: { responseMimeType: "application/json" }
-    });
-    state.currentProject.subtitles = JSON.parse(response.text);
-}
-
-/**
- * UTILITÁRIOS DE UI
- */
-function renderStoryboard() {
-    els.storyboardList.innerHTML = '';
-    state.currentProject.scenes.forEach((scene, index) => {
-        const item = document.createElement('div');
-        item.className = 'scene-item glass';
-        item.innerHTML = `
-            <div class="scene-num">${index + 1}</div>
-            <div class="scene-content">
-                <p class="text-xs font-bold text-indigo-400 mb-1">PROMPT</p>
-                <p class="text-sm">${scene.prompt}</p>
-                <p class="text-[10px] mt-2 text-neutral-500 uppercase">Áudio: ${scene.audioType}</p>
-            </div>
-            <div class="scene-actions">
-                <button class="btn-icon btn-danger" onclick="removeScene('${scene.id}')"><i class="fa-solid fa-trash"></i></button>
-            </div>
-        `;
-        els.storyboardList.appendChild(item);
-    });
-}
-
-function renderProjectList() {
-    els.projectList.innerHTML = '';
-    state.projects.forEach(p => {
-        const div = document.createElement('div');
-        div.className = 'p-2 border-b border-white/5 cursor-pointer hover:bg-white/5 text-xs truncate';
-        div.textContent = p.name;
-        div.onclick = () => loadProject(p.id);
-        els.projectList.appendChild(div);
-    });
-}
-
-window.removeScene = (id) => {
-    state.currentProject.scenes = state.currentProject.scenes.filter(s => s.id !== id);
-    renderStoryboard();
-};
-
-function toggleLoading(show, msg = "") {
-    state.isProcessing = show;
-    els.loadingSpinner.classList.toggle('hidden', !show);
-    els.loadingMsg.textContent = msg;
-    els.generateBtn.disabled = show;
-}
-
-function updateApiStatus(text, className) {
-    els.apiStatus.textContent = text;
-    els.apiStatus.className = `api-status ${className}`;
-}
-
-function saveProject() {
-    const idx = state.projects.findIndex(p => p.id === state.currentProject.id);
-    if (idx > -1) state.projects[idx] = state.currentProject;
-    else state.projects.push(state.currentProject);
-    localStorage.setItem('vinci_projects', JSON.stringify(state.projects));
-    renderProjectList();
-}
-
-function loadProject(id) {
-    const p = state.projects.find(x => x.id === id);
-    if (p) {
-        state.currentProject = p;
-        els.projectNameInput.value = p.name;
-        if (p.finalVideoUrl) els.mainPlayer.src = p.finalVideoUrl;
-        renderStoryboard();
-    }
-}
-
-function downloadBlob(url, name) {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-}
-
-function exportSRT() {
-    let srt = "";
-    state.currentProject.subtitles.forEach((sub, i) => {
-        srt += `${i + 1}\n00:00:${sub.startTime.toString().padStart(2, '0')},000 --> 00:00:${sub.endTime.toString().padStart(2, '0')},000\n${sub.text}\n\n`;
-    });
-    const blob = new Blob([srt], { type: 'text/plain' });
-    downloadBlob(URL.createObjectURL(blob), 'legendas.srt');
-}
-
-init();
+/* Render Player */
+.player-wrapper { position: relative; aspect-ratio: 16/9; background: #000; border-radius: 18px; overflow: hidden; }
+#subtitle-display { position: absolute; bottom: 10%; left: 0; width: 100%; text-align: center; pointer-events: none; }
+#subtitle-display p { display: inline-block; background: rgba(0,0,0,0.8); color: white; padding: 6px 16px; border-radius: 8px; font-size: 0.9rem; border: 1px solid rgba(255,255,255,0.1); }
