@@ -3,115 +3,142 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vinci AI Studio - Pro Edition</title>
-    <link rel="stylesheet" href="style.css">
+    <title>Vinci Studio | AI Video SaaS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
     <script type="importmap">
-    {
-      "imports": {
-        "@google/genai": "https://esm.sh/@google/genai@1.34.0"
-      }
-    }
-    </script>
+{
+  "imports": {
+    "@google/genai": "https://esm.sh/@google/genai@1.34.0",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/"
+  }
+}
+</script>
 </head>
-<body>
-    <div id="app-container">
-        <!-- Sidebar -->
-        <aside id="sidebar" class="glass">
-            <div class="brand">
-                <div class="logo-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
-                <h1 class="gradient-text">Vinci Studio</h1>
-            </div>
+<body class="bg-[#050505] text-[#f5f5f5] selection:bg-indigo-500/30 overflow-hidden h-screen">
+    <!-- Root element to prevent React mount errors -->
+    <div id="root" style="display: none;"></div>
 
-            <div class="section-box">
-                <label>Configuração de API</label>
-                <div class="input-group">
-                    <input type="password" id="api-key-input" placeholder="API KEY do Gemini">
-                    <button id="save-key-btn" class="btn-icon" title="Salvar"><i class="fa-solid fa-floppy-disk"></i></button>
-                    <button id="clear-key-btn" class="btn-icon btn-danger" title="Limpar"><i class="fa-solid fa-trash"></i></button>
+    <div id="app-container" class="flex h-full w-full">
+        
+        <!-- SIDEBAR -->
+        <aside id="sidebar" class="w-72 border-r border-white/5 flex flex-col z-50 bg-[#0a0a0a]">
+            <div class="p-6 flex items-center gap-3">
+                <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/20">
+                    <i class="fa-solid fa-wand-magic-sparkles text-white"></i>
                 </div>
-                <div id="api-status" class="api-status status-err">Chave não configurada</div>
+                <h1 class="text-xl font-bold tracking-tighter gradient-text">Vinci Studio</h1>
             </div>
 
-            <div class="section-box">
-                <label>Meus Projetos</label>
-                <div id="project-list" class="custom-scrollbar">
-                    <!-- Projetos salvos via JS -->
+            <nav class="flex-1 px-4 py-2 space-y-1 overflow-y-auto custom-scrollbar">
+                <div class="text-[10px] uppercase font-black text-neutral-600 px-3 mb-2 tracking-widest">Ações Rápidas</div>
+                <button id="sidebar-gen-img-btn" class="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-xl text-sm font-bold transition-all mb-2 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-image text-xs"></i> Gerar Imagem
+                </button>
+                <button id="sidebar-gen-video-btn" class="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-xl text-sm font-bold transition-all mb-6 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-video text-xs"></i> Criar Vídeo
+                </button>
+
+                <div class="text-[10px] uppercase font-black text-neutral-600 px-3 mb-2 tracking-widest">Navegação</div>
+                <a href="#" data-view="images" class="nav-item active"><i class="fa-solid fa-camera-retro w-5"></i> Imagens Flow</a>
+                <a href="#" data-view="settings" class="nav-item"><i class="fa-solid fa-gear w-5"></i> Configurações</a>
+                
+                <!-- API KEY MODULE -->
+                <div class="mt-8 p-4 bg-white/5 rounded-2xl border border-white/5 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[10px] uppercase font-black text-neutral-500 tracking-widest">Gemini API Key</span>
+                    </div>
+                    <input type="password" id="apiKeyInput" placeholder="Sua chave..." class="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-xs focus:ring-1 focus:ring-blue-500 outline-none transition-all">
+                    <div class="flex gap-2">
+                        <button id="saveApiKeyBtn" class="flex-1 bg-blue-600 hover:bg-blue-500 py-2 rounded-lg text-[10px] font-bold transition-all">Salvar</button>
+                        <button id="clearApiKeyBtn" class="px-3 bg-white/5 hover:bg-red-500/20 text-red-400 border border-white/10 py-2 rounded-lg text-[10px] font-bold transition-all">Limpar</button>
+                    </div>
+                    <div id="apiKeyStatus" class="text-[10px] font-bold text-red-400 uppercase tracking-widest text-center pt-1">
+                        CHAVE NÃO CONFIGURADA ❌
+                    </div>
                 </div>
-                <button id="new-project-btn" class="btn-primary-outline w-full mt-4">+ Novo Projeto</button>
-            </div>
+            </nav>
 
-            <div class="footer-info">
-                <p>Status: <span id="system-status">Ocioso</span></p>
+            <div class="p-4 border-t border-white/5">
+                <div class="text-[9px] text-neutral-500 font-medium uppercase tracking-tighter">v2.5 Enterprise Edition</div>
             </div>
         </aside>
 
-        <!-- Main Workspace -->
-        <main id="workspace">
-            <header class="glass">
-                <div class="project-header">
-                    <input type="text" id="project-name-input" placeholder="Nome do Projeto..." value="Meu Vídeo AI">
-                    <div class="duration-selector">
-                        <label><input type="radio" name="vid-type" value="short" checked> Curto (30s)</label>
-                        <label><input type="radio" name="vid-type" value="long"> Longo (2min)</label>
-                    </div>
+        <!-- MAIN AREA -->
+        <main class="flex-1 flex flex-col relative bg-[#050505]">
+            <header class="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-black/20 backdrop-blur-md z-40">
+                <div class="flex items-center gap-4">
+                    <h2 id="view-title" class="text-sm font-bold text-white/70">Imagens Flow</h2>
                 </div>
-                <div class="header-actions">
-                    <div id="loading-spinner" class="hidden"><i class="fa-solid fa-spinner fa-spin"></i> <span id="loading-msg">Processando...</span></div>
-                    <button id="generate-final-btn" class="btn-accent"><i class="fa-solid fa-film"></i> Gerar Vídeo Final</button>
+                <div id="loading-spinner" class="hidden flex items-center gap-2 text-[10px] font-bold text-blue-400 uppercase tracking-widest animate-pulse">
+                    <i class="fa-solid fa-spinner fa-spin"></i> Processando IA
                 </div>
             </header>
 
-            <div class="content-scroll custom-scrollbar">
-                <div class="max-width-wrapper">
-                    <!-- Player & Preview -->
-                    <section id="preview-section">
-                        <div class="video-card glass">
-                            <div class="video-container">
-                                <video id="main-player" controls poster="https://placehold.co/1280x720/0a0a0a/6366f1?text=Aguardando+Processamento"></video>
-                                <div id="subtitle-overlay"></div>
-                            </div>
-                            <div class="export-controls hidden" id="export-bar">
-                                <button id="download-video-btn" class="btn-primary"><i class="fa-solid fa-download"></i> Baixar Vídeo</button>
-                                <button id="download-srt-btn" class="btn-primary-outline"><i class="fa-solid fa-closed-captioning"></i> Baixar Legendas (SRT)</button>
-                            </div>
-                        </div>
-                    </section>
+            <div id="workspace" class="flex-1 overflow-y-auto custom-scrollbar">
+                
+                <!-- VIEW: IMAGES -->
+                <section id="view-images" class="view-panel animate-in">
+                    <div class="max-w-4xl mx-auto p-12 space-y-8">
+                        <header class="space-y-2">
+                            <h2 class="text-3xl font-black tracking-tight">Criação <span class="text-blue-500">Visual</span></h2>
+                            <p class="text-neutral-500 text-sm">Gere artes cinematográficas usando o modelo Gemini 2.5 Flash Image.</p>
+                        </header>
 
-                    <!-- Storyboard Builder -->
-                    <section id="storyboard-builder">
-                        <div class="section-header">
-                            <h2><i class="fa-solid fa-layer-group"></i> Storyboard de Cenas</h2>
-                            <p class="hint">Adicione cenas para construir seu vídeo longo ou curto.</p>
-                        </div>
-                        
-                        <div id="storyboard-list" class="storyboard-list">
-                            <!-- Cenas renderizadas via JS -->
-                        </div>
-
-                        <div class="add-scene-box glass">
-                            <textarea id="new-scene-prompt" placeholder="Descreva a próxima cena... Ex: Um robô futurista andando em uma floresta neon"></textarea>
-                            <div class="audio-options">
-                                <label>Áudio da Cena:</label>
-                                <select id="audio-type">
-                                    <option value="tts">Voz de IA (TTS)</option>
-                                    <option value="mic">Gravar meu Microfone</option>
-                                    <option value="upload">Upload de Arquivo</option>
+                        <div class="bg-white/5 p-8 rounded-[2.5rem] border border-white/5 space-y-6">
+                            <textarea id="image-prompt" placeholder="Ex: Um astronauta futurista explorando Marte ao pôr do sol..." class="w-full bg-black/40 border border-white/10 rounded-2xl p-6 h-32 text-lg outline-none focus:ring-2 focus:ring-blue-500/50 transition-all resize-none"></textarea>
+                            <div class="grid grid-cols-3 gap-4">
+                                <select id="image-style" class="bg-black/40 border border-white/10 rounded-xl p-3 text-sm outline-none">
+                                    <option value="cinematic">Cinematográfico</option>
+                                    <option value="realistic">Realista</option>
+                                    <option value="artistic">Artístico</option>
                                 </select>
-                                <div id="mic-controls" class="hidden">
-                                    <button id="record-btn" class="btn-danger"><i class="fa-solid fa-microphone"></i> Gravar</button>
-                                </div>
-                                <div id="upload-controls" class="hidden">
-                                    <input type="file" id="audio-file" accept="audio/*">
-                                </div>
-                                <button id="add-scene-btn" class="btn-primary">Adicionar Cena</button>
+                                <select id="image-ratio" class="bg-black/40 border border-white/10 rounded-xl p-3 text-sm outline-none">
+                                    <option value="16:9">16:9</option>
+                                    <option value="9:16">9:16</option>
+                                    <option value="1:1">1:1</option>
+                                </select>
+                                <button id="btn-generate-image" class="bg-blue-600 hover:bg-blue-500 rounded-xl font-bold text-sm transition-all shadow-lg shadow-blue-600/20">Gerar Imagem Premium</button>
                             </div>
                         </div>
-                    </section>
-                </div>
+
+                        <!-- CONTAINER DE PREVIEW COM DOWNLOAD -->
+                        <div id="image-preview-wrapper" class="hidden space-y-6 animate-in">
+                            <div id="image-preview-container" class="aspect-video bg-neutral-900 rounded-[2rem] overflow-hidden border border-white/5 relative group">
+                                <img id="image-result" src="" class="w-full h-full object-contain">
+                                <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
+                                    <button id="btn-save-gallery" class="bg-blue-600 px-6 py-3 rounded-xl font-bold text-sm shadow-xl hover:bg-blue-500 transition-all">Salvar na Galeria</button>
+                                </div>
+                            </div>
+                            <div class="flex justify-center">
+                                <button id="btn-download-image" class="bg-emerald-600 hover:bg-emerald-500 px-10 py-4 rounded-2xl font-bold text-sm shadow-lg shadow-emerald-600/20 transition-all flex items-center gap-3">
+                                    <i class="fa-solid fa-download"></i> Baixar Imagem PNG
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- VIEW: SETTINGS -->
+                <section id="view-settings" class="view-panel hidden animate-in">
+                    <div class="max-w-2xl mx-auto p-12 space-y-8">
+                        <header class="space-y-2 text-center">
+                            <h2 class="text-3xl font-black tracking-tight">Configurações</h2>
+                        </header>
+                        <div class="bg-white/5 p-8 rounded-[2.5rem] border border-white/5">
+                            <p class="text-sm text-neutral-400">Sua chave API é armazenada apenas localmente no seu navegador.</p>
+                            <p class="text-xs text-neutral-500 mt-2 italic">Key storage name: GEMINI_API_KEY</p>
+                        </div>
+                    </div>
+                </section>
+
             </div>
         </main>
     </div>
+
     <script type="module" src="script.js"></script>
 </body>
 </html>
