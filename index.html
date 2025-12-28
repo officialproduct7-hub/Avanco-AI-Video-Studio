@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vinci AI Studio - Vanilla Edition</title>
+    <title>Vinci AI Studio - Pro Edition</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script type="importmap">
@@ -23,95 +23,89 @@
                 <h1 class="gradient-text">Vinci Studio</h1>
             </div>
 
-            <div class="api-key-section">
-                <label>Gemini API Key</label>
+            <div class="section-box">
+                <label>Configuração de API</label>
                 <div class="input-group">
-                    <input type="password" id="api-key-input" placeholder="Cole sua chave aqui...">
-                    <button id="save-key-btn" title="Salvar Chave"><i class="fa-solid fa-floppy-disk"></i></button>
-                    <button id="clear-key-btn" title="Limpar Chave" class="btn-danger"><i class="fa-solid fa-trash"></i></button>
+                    <input type="password" id="api-key-input" placeholder="API KEY do Gemini">
+                    <button id="save-key-btn" class="btn-icon" title="Salvar"><i class="fa-solid fa-floppy-disk"></i></button>
+                    <button id="clear-key-btn" class="btn-icon btn-danger" title="Limpar"><i class="fa-solid fa-trash"></i></button>
                 </div>
-                <p class="api-status" id="api-status">Chave ausente</p>
+                <div id="api-status" class="api-status status-err">Chave não configurada</div>
             </div>
 
-            <button id="new-project-btn" class="btn-primary-outline">+ Novo Projeto</button>
-
-            <div class="project-list-container">
-                <h3>Meus Projetos</h3>
+            <div class="section-box">
+                <label>Meus Projetos</label>
                 <div id="project-list" class="custom-scrollbar">
-                    <!-- Projetos inseridos via JS -->
+                    <!-- Projetos salvos via JS -->
                 </div>
+                <button id="new-project-btn" class="btn-primary-outline w-full mt-4">+ Novo Projeto</button>
+            </div>
+
+            <div class="footer-info">
+                <p>Status: <span id="system-status">Ocioso</span></p>
             </div>
         </aside>
 
-        <!-- Main Content -->
+        <!-- Main Workspace -->
         <main id="workspace">
             <header class="glass">
-                <div class="project-meta">
-                    <input type="text" id="project-name-input" placeholder="Nome do Projeto..." value="Novo Projeto">
-                </div>
-                <div id="loading-indicator" class="hidden">
-                    <span class="spinner"></span>
-                    <span id="loading-text">Processando...</span>
+                <div class="project-header">
+                    <input type="text" id="project-name-input" placeholder="Nome do Projeto..." value="Meu Vídeo AI">
+                    <div class="duration-selector">
+                        <label><input type="radio" name="vid-type" value="short" checked> Curto (30s)</label>
+                        <label><input type="radio" name="vid-type" value="long"> Longo (2min)</label>
+                    </div>
                 </div>
                 <div class="header-actions">
-                    <button id="export-btn" class="btn-accent hidden"><i class="fa-solid fa-download"></i> Exportar Projeto</button>
+                    <div id="loading-spinner" class="hidden"><i class="fa-solid fa-spinner fa-spin"></i> <span id="loading-msg">Processando...</span></div>
+                    <button id="generate-final-btn" class="btn-accent"><i class="fa-solid fa-film"></i> Gerar Vídeo Final</button>
                 </div>
             </header>
 
             <div class="content-scroll custom-scrollbar">
                 <div class="max-width-wrapper">
-                    <!-- Preview Section -->
+                    <!-- Player & Preview -->
                     <section id="preview-section">
-                        <div class="section-header">
-                            <h2><i class="fa-solid fa-play text-indigo"></i> Preview Final</h2>
-                        </div>
-                        <div class="video-container glass" id="main-video-player">
-                            <video id="preview-video" controls poster="https://placehold.co/1280x720/0a0a0a/6366f1?text=Aguardando+Geração"></video>
-                            <div id="subtitle-overlay"></div>
-                        </div>
-                    </section>
-
-                    <!-- Creation Section -->
-                    <section id="creation-section" class="glass card">
-                        <h3><i class="fa-solid fa-plus"></i> Adicionar Nova Cena</h3>
-                        <div class="prompt-area">
-                            <textarea id="scene-prompt" placeholder="Descreva a cena para o seu vídeo..."></textarea>
-                            <div class="creation-controls">
-                                <div class="select-group">
-                                    <label>Formato</label>
-                                    <select id="aspect-ratio">
-                                        <option value="16:9">16:9 (Landscape)</option>
-                                        <option value="9:16">9:16 (Portrait)</option>
-                                        <option value="1:1">1:1 (Square)</option>
-                                    </select>
-                                </div>
-                                <div class="select-group">
-                                    <label>Resolução</label>
-                                    <select id="resolution">
-                                        <option value="720p">720p</option>
-                                        <option value="1080p">1080p</option>
-                                    </select>
-                                </div>
-                                <button id="add-scene-btn" class="btn-primary">Adicionar ao Storyboard</button>
+                        <div class="video-card glass">
+                            <div class="video-container">
+                                <video id="main-player" controls poster="https://placehold.co/1280x720/0a0a0a/6366f1?text=Aguardando+Processamento"></video>
+                                <div id="subtitle-overlay"></div>
+                            </div>
+                            <div class="export-controls hidden" id="export-bar">
+                                <button id="download-video-btn" class="btn-primary"><i class="fa-solid fa-download"></i> Baixar Vídeo</button>
+                                <button id="download-srt-btn" class="btn-primary-outline"><i class="fa-solid fa-closed-captioning"></i> Baixar Legendas (SRT)</button>
                             </div>
                         </div>
                     </section>
 
-                    <!-- Storyboard Section -->
-                    <section id="storyboard-section">
+                    <!-- Storyboard Builder -->
+                    <section id="storyboard-builder">
                         <div class="section-header">
-                            <h2><i class="fa-solid fa-clapperboard text-purple"></i> Storyboard</h2>
-                            <div class="storyboard-actions">
-                                <select id="transition-type">
-                                    <option value="none">Sem Transição</option>
-                                    <option value="fade">Fade</option>
-                                    <option value="zoom">Zoom</option>
+                            <h2><i class="fa-solid fa-layer-group"></i> Storyboard de Cenas</h2>
+                            <p class="hint">Adicione cenas para construir seu vídeo longo ou curto.</p>
+                        </div>
+                        
+                        <div id="storyboard-list" class="storyboard-list">
+                            <!-- Cenas renderizadas via JS -->
+                        </div>
+
+                        <div class="add-scene-box glass">
+                            <textarea id="new-scene-prompt" placeholder="Descreva a próxima cena... Ex: Um robô futurista andando em uma floresta neon"></textarea>
+                            <div class="audio-options">
+                                <label>Áudio da Cena:</label>
+                                <select id="audio-type">
+                                    <option value="tts">Voz de IA (TTS)</option>
+                                    <option value="mic">Gravar meu Microfone</option>
+                                    <option value="upload">Upload de Arquivo</option>
                                 </select>
-                                <button id="stitch-btn" class="btn-accent">Gerar Vídeo Longo</button>
+                                <div id="mic-controls" class="hidden">
+                                    <button id="record-btn" class="btn-danger"><i class="fa-solid fa-microphone"></i> Gravar</button>
+                                </div>
+                                <div id="upload-controls" class="hidden">
+                                    <input type="file" id="audio-file" accept="audio/*">
+                                </div>
+                                <button id="add-scene-btn" class="btn-primary">Adicionar Cena</button>
                             </div>
-                        </div>
-                        <div id="storyboard-grid">
-                            <!-- Cenas inseridas via JS -->
                         </div>
                     </section>
                 </div>
