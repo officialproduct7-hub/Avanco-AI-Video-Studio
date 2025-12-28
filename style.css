@@ -1,230 +1,347 @@
-:root {
-    --bg: #050505;
-    --glass: rgba(255, 255, 255, 0.03);
-    --border: rgba(255, 255, 255, 0.08);
-    --primary: #6366f1;
-    --accent: #a855f7;
-    --danger: #ef4444;
-    --text: #f8fafc;
-    --text-dim: #94a3b8;
+import { GoogleGenAI } from "@google/genai";
+
+/**
+ * ESTADO DA APLICAÇÃO
+ */
+const state = {
+    apiKey: localStorage.getItem('vinci_api_key') || '',
+    projects: JSON.parse(localStorage.getItem('vinci_projects') || '[]'),
+    currentProject: {
+        id: Date.now().toString(),
+        name: 'Novo Vídeo',
+        aspectRatio: '16:9',
+        scenes: []
+    },
+    isRendering: false,
+    mediaMap: new Map() // Mapeia IDs de cena para ObjectURLs de mídia carregada
+};
+
+// UI Elements
+const els = {
+    apiKeyInput: document.getElementById('api-key-input'),
+    apiStatus: document.getElementById('api-status'),
+    saveKeyBtn: document.getElementById('save-key-btn'),
+    clearKeyBtn: document.getElementById('clear-key-btn'),
+    projectName: document.getElementById('project-name'),
+    storyboardGrid: document.getElementById('storyboard-grid'),
+    addSceneBtn: document.getElementById('add-scene-btn'),
+    generateBtn: document.getElementById('generate-btn'),
+    mainPlayer: document.getElementById('main-player'),
+    renderCanvas: document.getElementById('render-canvas'),
+    loadingOverlay: document.getElementById('loading-overlay'),
+    loadingText: document.getElementById('loading-text'),
+    projectList: document.getElementById('project-list'),
+    exportBar: document.getElementById('export-bar'),
+    downloadBtn: document.getElementById('download-btn')
+};
+
+/**
+ * INICIALIZAÇÃO
+ */
+function init() {
+    if (state.apiKey) {
+        els.apiKeyInput.value = '********';
+        updateApiStatus('Chave Ativa', 'ok');
+    }
+    renderProjectList();
+    renderStoryboard();
+    bindEvents();
 }
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-    background-color: var(--bg);
-    color: var(--text);
-    font-family: 'Inter', -apple-system, sans-serif;
-    height: 100vh;
-    overflow: hidden;
+/**
+ * GERENCIAMENTO DE CENAS E MÍDIA
+ */
+function addScene() {
+    const sceneId = Math.random().toString(36).substr(2, 9);
+    state.currentProject.scenes.push({
+        id: sceneId,
+        prompt: '',
+        mediaType: 'none', // 'none', 'image', 'video'
+        mediaUrl: '',
+        duration: 5 // Segundos padrão para imagens
+    });
+    renderStoryboard();
+    saveToStorage();
 }
 
-/* Layout */
-#app-container {
-    display: flex;
-    height: 100vh;
+function handleMediaUpload(sceneId, file, type) {
+    if (!file) return;
+    
+    // Libera URL anterior se existir
+    if (state.mediaMap.has(sceneId)) {
+        URL.revokeObjectURL(state.mediaMap.get(sceneId));
+    }
+
+    const url = URL.createObjectURL(file);
+    state.mediaMap.set(sceneId, url);
+    
+    const scene = state.currentProject.scenes.find(s => s.id === sceneId);
+    scene.mediaType = type;
+    scene.mediaName = file.name;
+    scene.mediaSize = (file.size / 1024 / 1024).toFixed(2) + ' MB';
+
+    renderStoryboard();
 }
 
-.glass {
-    background: var(--glass);
-    backdrop-filter: blur(12px);
-    border: 1px solid var(--border);
+/**
+ * RENDERIZAÇÃO DE INTERFACE
+ */
+function renderStoryboard() {
+    els.storyboardGrid.textContent = '';
+    document.getElementById('scene-count').textContent = `(${state.currentProject.scenes.length})`;
+
+    state.currentProject.scenes.forEach((scene, index) => {
+        const card = document.createElement('div');
+        card.className = 'scene-card glass';
+
+        // Preview Area
+        const preview = document.createElement('div');
+        preview.className = 'scene-media-preview';
+        
+        const mediaUrl = state.mediaMap.get(scene.id);
+        if (mediaUrl) {
+            if (scene.mediaType === 'image') {
+                const img = document.createElement('img');
+                img.src = mediaUrl;
+                preview.appendChild(img);
+            } else {
+                const vid = document.createElement('video');
+                vid.src = mediaUrl;
+                vid.muted = true;
+                vid.onmouseover = () => vid.play();
+                vid.onmouseleave = () => vid.pause();
+                preview.appendChild(vid);
+            }
+        } else {
+            preview.innerHTML = `
+                <div class="media-placeholder">
+                    <i class="fa-solid fa-photo-film text-3xl"></i>
+                    <span style="font-size: 10px; font-weight: 800; opacity: 0.5;">SEM MÍDIA</span>
+                </div>`;
+        }
+
+        // Body
+        const body = document.createElement('div');
+        body.className = 'scene-body';
+        
+        const txt = document.createElement('textarea');
+        txt.className = 'scene-prompt';
+        txt.placeholder = 'Texto/Roteiro desta cena...';
+        txt.value = scene.prompt;
+        txt.onchange = (e) => { scene.prompt = e.target.value; saveToStorage(); };
+
+        const controls = document.createElement('div');
+        controls.className = 'media-controls';
+        
+        const imgInput = document.createElement('input');
+        imgInput.type = 'file'; imgInput.accept = 'image/*'; imgInput.className = 'hidden';
+        imgInput.onchange = (e) => handleMediaUpload(scene.id, e.target.files[0], 'image');
+        
+        const vidInput = document.createElement('input');
+        vidInput.type = 'file'; vidInput.accept = 'video/*'; vidInput.className = 'hidden';
+        vidInput.onchange = (e) => handleMediaUpload(scene.id, e.target.files[0], 'video');
+
+        controls.innerHTML = `
+            <div class="btn-upload" onclick="this.nextElementSibling.click()"><i class="fa-solid fa-image"></i> Imagem</div>
+            <div class="btn-upload" onclick="this.nextElementSibling.click()"><i class="fa-solid fa-video"></i> Vídeo</div>
+        `;
+        controls.children[0].appendChild(imgInput);
+        controls.children[1].appendChild(vidInput);
+
+        const footer = document.createElement('div');
+        footer.className = 'scene-footer flex justify-between items-center mt-2';
+        footer.innerHTML = `
+            <span class="text-[10px] font-bold text-neutral-500">CENA ${index + 1}</span>
+            <button class="btn-danger btn-sm" onclick="removeScene('${scene.id}')"><i class="fa-solid fa-trash"></i></button>
+        `;
+
+        body.appendChild(txt);
+        body.appendChild(controls);
+        body.appendChild(footer);
+        card.appendChild(preview);
+        card.appendChild(body);
+        els.storyboardGrid.appendChild(card);
+    });
 }
 
-/* Sidebar */
-#sidebar {
-    width: 320px;
-    padding: 2rem;
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
-    z-index: 10;
+/**
+ * MOTOR DE RENDERIZAÇÃO (CANVAS + MEDIARECORDER)
+ */
+async function renderFinalVideo() {
+    if (state.currentProject.scenes.length === 0) return alert('Adicione cenas ao storyboard.');
+    if (state.isRendering) return;
+
+    state.isRendering = true;
+    toggleLoading(true, "Iniciando Estúdio...");
+    
+    const canvas = els.renderCanvas;
+    const ctx = canvas.getContext('2d');
+    const ratio = document.getElementById('aspect-ratio').value === '16:9' ? {w: 1280, h: 720} : {w: 720, h: 1280};
+    canvas.width = ratio.w;
+    canvas.height = ratio.h;
+
+    const stream = canvas.captureStream(30);
+    const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+    const chunks = [];
+
+    recorder.ondataavailable = (e) => chunks.push(e.data);
+    recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        els.mainPlayer.src = url;
+        els.exportBar.classList.remove('hidden');
+        toggleLoading(false);
+        state.isRendering = false;
+        alert("Renderização concluída!");
+    };
+
+    recorder.start();
+
+    for (const scene of state.currentProject.scenes) {
+        toggleLoading(true, `Renderizando Cena...`);
+        const mediaUrl = state.mediaMap.get(scene.id);
+        
+        if (!mediaUrl) continue;
+
+        if (scene.mediaType === 'image') {
+            await renderImageScene(ctx, mediaUrl, scene.prompt, ratio, 3000); // 3s por imagem
+        } else {
+            await renderVideoScene(ctx, mediaUrl, scene.prompt, ratio);
+        }
+    }
+
+    recorder.stop();
 }
 
-.brand { display: flex; align-items: center; gap: 0.75rem; }
-.logo-icon {
-    width: 40px; height: 40px;
-    background: var(--primary);
-    border-radius: 12px;
-    display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
+async function renderImageScene(ctx, url, text, ratio, duration) {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+
+    return new Promise(resolve => {
+        const startTime = Date.now();
+        const loop = () => {
+            const now = Date.now();
+            if (now - startTime > duration) return resolve();
+            
+            // Desenhar Imagem (Cover)
+            const hRatio = ratio.w / img.width;
+            const vRatio = ratio.h / img.height;
+            const r = Math.max(hRatio, vRatio);
+            const centerShiftX = (ratio.w - img.width * r) / 2;
+            const centerShiftY = (ratio.h - img.height * r) / 2;
+            ctx.clearRect(0, 0, ratio.w, ratio.h);
+            ctx.drawImage(img, 0, 0, img.width, img.height, centerShiftX, centerShiftY, img.width*r, img.height*r);
+
+            // Desenhar Legenda
+            if (text) drawSubtitles(ctx, text, ratio);
+
+            requestAnimationFrame(loop);
+        };
+        loop();
+    });
 }
 
-.gradient-text {
-    background: linear-gradient(135deg, var(--primary), var(--accent));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    font-size: 1.5rem;
-    font-weight: 800;
+async function renderVideoScene(ctx, url, text, ratio) {
+    const video = document.createElement('video');
+    video.src = url;
+    video.muted = true;
+    await video.play();
+
+    return new Promise(resolve => {
+        const loop = () => {
+            if (video.ended) return resolve();
+            ctx.drawImage(video, 0, 0, ratio.w, ratio.h);
+            if (text) drawSubtitles(ctx, text, ratio);
+            requestAnimationFrame(loop);
+        };
+        loop();
+    });
 }
 
-/* Inputs */
-.api-key-section label {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    font-weight: 800;
-    color: var(--text-dim);
-    margin-bottom: 0.5rem;
-    display: block;
+function drawSubtitles(ctx, text, ratio) {
+    ctx.font = 'bold 30px Inter';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'white';
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 4;
+    ctx.strokeText(text, ratio.w / 2, ratio.h - 60);
+    ctx.fillText(text, ratio.w / 2, ratio.h - 60);
 }
 
-.input-group { display: flex; gap: 0.5rem; }
-input, select, textarea {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid var(--border);
-    color: white;
-    padding: 0.75rem;
-    border-radius: 8px;
-    font-size: 0.9rem;
-    outline: none;
-}
-input:focus { border-color: var(--primary); }
+/**
+ * UTILITÁRIOS
+ */
+function bindEvents() {
+    els.saveKeyBtn.onclick = () => {
+        const key = els.apiKeyInput.value.trim();
+        if (key && key !== '********') {
+            localStorage.setItem('vinci_api_key', key);
+            state.apiKey = key;
+            els.apiKeyInput.value = '********';
+            updateApiStatus('Salvo', 'ok');
+        }
+    };
 
-.api-status { font-size: 0.7rem; margin-top: 0.4rem; font-weight: 600; }
-.status-ok { color: #22c55e; }
-.status-err { color: var(--danger); }
+    els.clearKeyBtn.onclick = () => {
+        localStorage.removeItem('vinci_api_key');
+        state.apiKey = '';
+        els.apiKeyInput.value = '';
+        updateApiStatus('Removido', 'err');
+    };
 
-/* Main Workspace */
-#workspace {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    background: radial-gradient(circle at top right, rgba(99, 102, 241, 0.05), transparent);
-}
+    els.addSceneBtn.onclick = addScene;
+    els.generateBtn.onclick = renderFinalVideo;
+    els.downloadBtn.onclick = () => {
+        const a = document.createElement('a');
+        a.href = els.mainPlayer.src;
+        a.download = `${els.projectName.value.replace(/\s+/g, '_')}.webm`;
+        a.click();
+    };
 
-header {
-    height: 70px;
-    padding: 0 2rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
+    window.removeScene = (id) => {
+        state.currentProject.scenes = state.currentProject.scenes.filter(s => s.id !== id);
+        renderStoryboard();
+        saveToStorage();
+    };
 
-#project-name-input {
-    background: transparent;
-    border: none;
-    font-size: 1.2rem;
-    font-weight: 700;
-    width: 300px;
-}
-
-.content-scroll {
-    flex: 1;
-    overflow-y: auto;
-    padding: 2rem;
+    els.newProjectBtn.onclick = () => {
+        state.currentProject = { id: Date.now().toString(), name: 'Novo Vídeo', scenes: [] };
+        state.mediaMap.clear();
+        renderStoryboard();
+    };
 }
 
-.max-width-wrapper {
-    max-width: 1100px;
-    margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-    gap: 3rem;
+function saveToStorage() {
+    // Salva apenas metadados
+    const projects = state.projects.filter(p => p.id !== state.currentProject.id);
+    projects.push(state.currentProject);
+    localStorage.setItem('vinci_projects', JSON.stringify(projects));
 }
 
-/* Cards & Sections */
-.card { padding: 2rem; border-radius: 24px; }
-.section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1.5rem;
+function renderProjectList() {
+    els.projectList.textContent = '';
+    state.projects.forEach(p => {
+        const item = document.createElement('div');
+        item.className = 'p-2 border-b border-white/5 cursor-pointer hover:bg-white/5 text-xs truncate';
+        item.textContent = p.name;
+        item.onclick = () => {
+            state.currentProject = p;
+            els.projectName.value = p.name;
+            renderStoryboard();
+        };
+        els.projectList.appendChild(item);
+    });
 }
 
-.video-container {
-    aspect-ratio: 16/9;
-    border-radius: 24px;
-    overflow: hidden;
-    position: relative;
-    background: black;
-}
-video { width: 100%; height: 100%; object-fit: contain; }
-
-#subtitle-overlay {
-    position: absolute;
-    bottom: 10%;
-    left: 0; width: 100%;
-    text-align: center;
-    pointer-events: none;
-}
-#subtitle-overlay p {
-    display: inline-block;
-    background: rgba(0,0,0,0.8);
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    font-size: 0.9rem;
+function updateApiStatus(text, type) {
+    els.apiStatus.textContent = text;
+    els.apiStatus.className = `status-msg status-${type}`;
 }
 
-/* Storyboard Grid */
-#storyboard-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1.5rem;
+function toggleLoading(show, text = "") {
+    els.loadingOverlay.classList.toggle('hidden', !show);
+    els.loadingText.textContent = text;
 }
 
-.scene-card {
-    border-radius: 16px;
-    overflow: hidden;
-    transition: transform 0.2s;
-}
-.scene-card:hover { transform: translateY(-4px); border-color: var(--primary); }
-
-.scene-thumb {
-    aspect-ratio: 16/9;
-    background: #111;
-    position: relative;
-}
-.scene-thumb video { object-fit: cover; }
-
-.scene-info { padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
-.scene-info textarea { width: 100%; height: 60px; font-size: 0.75rem; }
-
-.scene-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-top: 1px solid var(--border);
-    padding-top: 0.75rem;
-}
-
-/* Buttons */
-button {
-    cursor: pointer;
-    border: none;
-    border-radius: 8px;
-    padding: 0.6rem 1rem;
-    font-weight: 600;
-    transition: 0.2s;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.btn-primary { background: var(--primary); color: white; }
-.btn-primary:hover { background: #4f46e5; filter: brightness(1.1); }
-.btn-accent { background: var(--accent); color: white; }
-.btn-danger { background: rgba(239, 68, 68, 0.1); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.2); }
-.btn-danger:hover { background: var(--danger); color: white; }
-
-.btn-primary-outline {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text-dim);
-}
-.btn-primary-outline:hover { background: var(--glass); color: white; }
-
-.hidden { display: none !important; }
-
-/* Utils */
-.custom-scrollbar::-webkit-scrollbar { width: 6px; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: #222; border-radius: 10px; }
-
-.spinner {
-    width: 20px; height: 20px;
-    border: 2px solid rgba(255,255,255,0.1);
-    border-top-color: var(--primary);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin { to { transform: rotate(360deg); } }
+init();
