@@ -1,80 +1,307 @@
-:root {
-    --bg: #050505;
-    --glass: rgba(255, 255, 255, 0.03);
-    --border: rgba(255, 255, 255, 0.08);
-    --primary: #6366f1;
-    --accent: #a855f7;
-    --danger: #ef4444;
-    --text: #f8fafc;
+import { GoogleGenAI } from "@google/genai";
+
+/**
+ * ESTADO GLOBAL DA APLICAÇÃO
+ */
+const state = {
+    apiKey: localStorage.getItem('vinci_api_key') || '',
+    projects: JSON.parse(localStorage.getItem('vinci_projects') || '[]'),
+    currentProject: {
+        id: Date.now().toString(),
+        name: 'Novo Vídeo',
+        type: 'short', // short ou long
+        scenes: [],
+        finalVideoUrl: '',
+        subtitles: []
+    },
+    isProcessing: false,
+    recorder: null,
+    audioBlob: null
+};
+
+// Seletores DOM
+const els = {
+    apiKeyInput: document.getElementById('api-key-input'),
+    saveKeyBtn: document.getElementById('save-key-btn'),
+    clearKeyBtn: document.getElementById('clear-key-btn'),
+    apiStatus: document.getElementById('api-status'),
+    projectNameInput: document.getElementById('project-name-input'),
+    storyboardList: document.getElementById('storyboard-list'),
+    newScenePrompt: document.getElementById('new-scene-prompt'),
+    addSceneBtn: document.getElementById('add-scene-btn'),
+    generateBtn: document.getElementById('generate-final-btn'),
+    mainPlayer: document.getElementById('main-player'),
+    loadingSpinner: document.getElementById('loading-spinner'),
+    loadingMsg: document.getElementById('loading-msg'),
+    recordBtn: document.getElementById('record-btn'),
+    audioType: document.getElementById('audio-type'),
+    micControls: document.getElementById('mic-controls'),
+    uploadControls: document.getElementById('upload-controls'),
+    audioFile: document.getElementById('audio-file'),
+    exportBar: document.getElementById('export-bar'),
+    downloadVideoBtn: document.getElementById('download-video-btn'),
+    downloadSrtBtn: document.getElementById('download-srt-btn'),
+    projectList: document.getElementById('project-list'),
+    newProjectBtn: document.getElementById('new-project-btn')
+};
+
+/**
+ * INICIALIZAÇÃO
+ */
+function init() {
+    if (state.apiKey) {
+        els.apiKeyInput.value = '********';
+        updateApiStatus('Chave Ativa', 'status-ok');
+    }
+    
+    renderStoryboard();
+    renderProjectList();
+    bindEvents();
 }
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; overflow: hidden; height: 100vh; }
+/**
+ * EVENTOS
+ */
+function bindEvents() {
+    els.saveKeyBtn.onclick = () => {
+        const key = els.apiKeyInput.value.trim();
+        if (!key || key === '********') return;
+        state.apiKey = key;
+        localStorage.setItem('vinci_api_key', key);
+        els.apiKeyInput.value = '********';
+        updateApiStatus('Salvo com sucesso', 'status-ok');
+    };
 
-#app-container { display: flex; height: 100vh; }
+    els.clearKeyBtn.onclick = () => {
+        state.apiKey = '';
+        localStorage.removeItem('vinci_api_key');
+        els.apiKeyInput.value = '';
+        updateApiStatus('Chave removida', 'status-err');
+    };
 
-.glass { background: var(--glass); backdrop-filter: blur(12px); border: 1px solid var(--border); }
+    els.audioType.onchange = (e) => {
+        els.micControls.classList.toggle('hidden', e.target.value !== 'mic');
+        els.uploadControls.classList.toggle('hidden', e.target.value !== 'upload');
+    };
 
-/* Sidebar */
-#sidebar { width: 320px; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
-.brand { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
-.logo-icon { width: 40px; height: 40px; background: var(--primary); border-radius: 10px; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 15px var(--primary); }
-.gradient-text { background: linear-gradient(to right, var(--primary), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800; font-size: 1.5rem; }
+    els.recordBtn.onclick = async () => {
+        if (!state.recorder) {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            state.recorder = new MediaRecorder(stream);
+            let chunks = [];
+            state.recorder.ondataavailable = e => chunks.push(e.data);
+            state.recorder.onstop = () => {
+                state.audioBlob = new Blob(chunks, { type: 'audio/webm' });
+                els.recordBtn.innerHTML = '<i class="fa-solid fa-check"></i> Gravado';
+            };
+            state.recorder.start();
+            els.recordBtn.innerHTML = '<i class="fa-solid fa-stop"></i> Parar';
+        } else {
+            state.recorder.stop();
+            state.recorder = null;
+        }
+    };
 
-.section-box { display: flex; flex-direction: column; gap: 10px; }
-.section-box label { font-size: 0.7rem; text-transform: uppercase; font-weight: 900; color: #555; }
+    els.addSceneBtn.onclick = () => {
+        const prompt = els.newScenePrompt.value.trim();
+        if (!prompt) return alert('Descreva a cena!');
+        
+        const scene = {
+            id: Math.random().toString(36).substr(2, 9),
+            prompt: prompt,
+            audioType: els.audioType.value,
+            audioData: state.audioBlob,
+            videoUrl: ''
+        };
+        
+        state.currentProject.scenes.push(scene);
+        els.newScenePrompt.value = '';
+        state.audioBlob = null;
+        els.recordBtn.innerHTML = '<i class="fa-solid fa-microphone"></i> Gravar';
+        renderStoryboard();
+    };
 
-/* Inputs */
-input, select, textarea { background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 8px; color: white; padding: 10px; font-size: 0.9rem; outline: none; }
-input:focus, textarea:focus { border-color: var(--primary); }
-textarea { resize: none; width: 100%; height: 100px; }
+    els.generateBtn.onclick = async () => {
+        if (state.isProcessing) return;
+        if (!state.apiKey) return alert('Configure sua API Key primeiro!');
+        if (state.currentProject.scenes.length === 0) return alert('Adicione ao menos uma cena!');
 
-.input-group { display: flex; gap: 5px; }
-.api-status { font-size: 0.7rem; font-weight: bold; }
-.status-ok { color: #22c55e; }
-.status-err { color: var(--danger); }
+        await generateUnifiedVideo();
+    };
 
-/* Workspace */
-#workspace { flex: 1; display: flex; flex-direction: column; }
-header { height: 80px; padding: 0 30px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
-.project-header { display: flex; flex-direction: column; gap: 5px; }
-#project-name-input { background: transparent; border: none; font-size: 1.2rem; font-weight: 700; width: 300px; padding: 0; }
-.duration-selector { display: flex; gap: 15px; font-size: 0.8rem; font-weight: 600; color: #777; }
+    els.downloadVideoBtn.onclick = () => downloadBlob(state.currentProject.finalVideoUrl, 'video.mp4');
+    els.downloadSrtBtn.onclick = () => exportSRT();
+    
+    els.newProjectBtn.onclick = () => {
+        state.currentProject = { id: Date.now().toString(), name: 'Novo Vídeo', scenes: [] };
+        els.projectNameInput.value = state.currentProject.name;
+        els.exportBar.classList.add('hidden');
+        renderStoryboard();
+    };
+}
 
-.content-scroll { flex: 1; overflow-y: auto; padding: 30px; }
-.max-width-wrapper { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 30px; }
+/**
+ * LÓGICA DE GERAÇÃO (UNIFICADA)
+ */
+async function generateUnifiedVideo() {
+    toggleLoading(true, "Iniciando Processamento...");
+    const ai = new GoogleGenAI({ apiKey: state.apiKey });
+    let currentVideo = null; // Para extensão
 
-/* Video Player */
-.video-card { border-radius: 20px; overflow: hidden; }
-.video-container { aspect-ratio: 16/9; background: black; position: relative; }
-video { width: 100%; height: 100%; object-fit: contain; }
-#subtitle-overlay { position: absolute; bottom: 10%; width: 100%; text-align: center; pointer-events: none; }
-#subtitle-overlay p { display: inline-block; background: rgba(0,0,0,0.8); padding: 5px 15px; border-radius: 5px; font-size: 0.9rem; }
+    try {
+        for (let i = 0; i < state.currentProject.scenes.length; i++) {
+            const scene = state.currentProject.scenes[i];
+            toggleLoading(true, `Sintetizando Cena ${i+1}...`);
 
-.export-bar { padding: 15px; display: flex; gap: 10px; border-top: 1px solid var(--border); }
+            let config = {
+                model: 'veo-3.1-fast-generate-preview',
+                prompt: scene.prompt,
+                config: {
+                    numberOfVideos: 1,
+                    resolution: '720p',
+                    aspectRatio: '16:9'
+                }
+            };
 
-/* Storyboard */
-.storyboard-list { display: flex; flex-direction: column; gap: 15px; }
-.scene-item { display: flex; gap: 20px; padding: 20px; border-radius: 15px; background: rgba(255,255,255,0.02); transition: 0.2s; position: relative; }
-.scene-item:hover { background: rgba(255,255,255,0.05); }
+            // Se for a segunda cena em diante, estender o vídeo anterior
+            if (currentVideo) {
+                config.video = currentVideo;
+            }
 
-.scene-num { width: 30px; height: 30px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: bold; }
-.scene-content { flex: 1; }
-.scene-actions { display: flex; flex-direction: column; gap: 10px; }
+            let operation = await ai.models.generateVideos(config);
+            
+            // Polling
+            while (!operation.done) {
+                await new Promise(r => setTimeout(r, 10000));
+                operation = await ai.operations.getVideosOperation({ operation: operation });
+            }
 
-.add-scene-box { padding: 20px; border-radius: 15px; display: flex; flex-direction: column; gap: 15px; }
-.audio-options { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; }
+            const videoMeta = operation.response?.generatedVideos?.[0]?.video;
+            currentVideo = videoMeta; // Atualiza para a próxima extensão
+            
+            // Atualizar status na UI
+            scene.videoUrl = videoMeta.uri;
+        }
 
-/* Buttons */
-button { cursor: pointer; border: none; border-radius: 8px; font-weight: 700; transition: 0.2s; display: flex; align-items: center; gap: 8px; }
-.btn-primary { background: var(--primary); color: white; padding: 10px 20px; }
-.btn-primary:hover { filter: brightness(1.2); }
-.btn-accent { background: var(--accent); color: white; padding: 12px 25px; }
-.btn-primary-outline { background: transparent; border: 1px solid var(--border); color: var(--text); padding: 10px 20px; }
-.btn-icon { width: 35px; height: 35px; justify-content: center; }
-.btn-danger { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
-.btn-danger:hover { background: var(--danger); color: white; }
+        // Finalizar e Baixar o arquivo completo
+        toggleLoading(true, "Finalizando arquivo único...");
+        const finalResp = await fetch(`${currentVideo.uri}&key=${state.apiKey}`);
+        const finalBlob = await finalResp.blob();
+        state.currentProject.finalVideoUrl = URL.createObjectURL(finalBlob);
+        
+        // Gerar Legendas Sincronizadas
+        toggleLoading(true, "Gerando Legendas...");
+        await generateSubtitles(ai);
 
-.hidden { display: none !important; }
-.custom-scrollbar::-webkit-scrollbar { width: 6px; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: #222; border-radius: 10px; }
+        els.mainPlayer.src = state.currentProject.finalVideoUrl;
+        els.exportBar.classList.remove('hidden');
+        saveProject();
+        alert("Vídeo Final Gerado com Sucesso!");
+
+    } catch (err) {
+        console.error(err);
+        if (err.status === 429) alert("Erro de Quota: Muitas requisições. Aguarde 1 minuto.");
+        else alert("Erro durante a geração: " + err.message);
+    } finally {
+        toggleLoading(false);
+    }
+}
+
+async function generateSubtitles(ai) {
+    const fullPrompt = state.currentProject.scenes.map(s => s.prompt).join(" ");
+    const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `Gere legendas sincronizadas (JSON) para este roteiro: "${fullPrompt}". Formato: [{startTime: 0, endTime: 5, text: "..."}]`,
+        config: { responseMimeType: "application/json" }
+    });
+    state.currentProject.subtitles = JSON.parse(response.text);
+}
+
+/**
+ * UTILITÁRIOS DE UI
+ */
+function renderStoryboard() {
+    els.storyboardList.innerHTML = '';
+    state.currentProject.scenes.forEach((scene, index) => {
+        const item = document.createElement('div');
+        item.className = 'scene-item glass';
+        item.innerHTML = `
+            <div class="scene-num">${index + 1}</div>
+            <div class="scene-content">
+                <p class="text-xs font-bold text-indigo-400 mb-1">PROMPT</p>
+                <p class="text-sm">${scene.prompt}</p>
+                <p class="text-[10px] mt-2 text-neutral-500 uppercase">Áudio: ${scene.audioType}</p>
+            </div>
+            <div class="scene-actions">
+                <button class="btn-icon btn-danger" onclick="removeScene('${scene.id}')"><i class="fa-solid fa-trash"></i></button>
+            </div>
+        `;
+        els.storyboardList.appendChild(item);
+    });
+}
+
+function renderProjectList() {
+    els.projectList.innerHTML = '';
+    state.projects.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'p-2 border-b border-white/5 cursor-pointer hover:bg-white/5 text-xs truncate';
+        div.textContent = p.name;
+        div.onclick = () => loadProject(p.id);
+        els.projectList.appendChild(div);
+    });
+}
+
+window.removeScene = (id) => {
+    state.currentProject.scenes = state.currentProject.scenes.filter(s => s.id !== id);
+    renderStoryboard();
+};
+
+function toggleLoading(show, msg = "") {
+    state.isProcessing = show;
+    els.loadingSpinner.classList.toggle('hidden', !show);
+    els.loadingMsg.textContent = msg;
+    els.generateBtn.disabled = show;
+}
+
+function updateApiStatus(text, className) {
+    els.apiStatus.textContent = text;
+    els.apiStatus.className = `api-status ${className}`;
+}
+
+function saveProject() {
+    const idx = state.projects.findIndex(p => p.id === state.currentProject.id);
+    if (idx > -1) state.projects[idx] = state.currentProject;
+    else state.projects.push(state.currentProject);
+    localStorage.setItem('vinci_projects', JSON.stringify(state.projects));
+    renderProjectList();
+}
+
+function loadProject(id) {
+    const p = state.projects.find(x => x.id === id);
+    if (p) {
+        state.currentProject = p;
+        els.projectNameInput.value = p.name;
+        if (p.finalVideoUrl) els.mainPlayer.src = p.finalVideoUrl;
+        renderStoryboard();
+    }
+}
+
+function downloadBlob(url, name) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+function exportSRT() {
+    let srt = "";
+    state.currentProject.subtitles.forEach((sub, i) => {
+        srt += `${i + 1}\n00:00:${sub.startTime.toString().padStart(2, '0')},000 --> 00:00:${sub.endTime.toString().padStart(2, '0')},000\n${sub.text}\n\n`;
+    });
+    const blob = new Blob([srt], { type: 'text/plain' });
+    downloadBlob(URL.createObjectURL(blob), 'legendas.srt');
+}
+
+init();
