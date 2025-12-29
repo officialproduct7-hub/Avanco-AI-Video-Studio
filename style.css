@@ -1,185 +1,179 @@
-import { GoogleGenAI } from "@google/genai";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
-/**
- * VINCI STUDIO - CORE SCRIPT
- * Patch Crítico: Gestão de API Key (GEMINI_API_KEY) & Download de Imagem
- */
-
-// --- GESTÃO DE API KEY (LOCALSTORAGE) ---
-
-const getApiKey = () => (localStorage.getItem('GEMINI_API_KEY') || '').trim();
-
-const updateApiKeyUI = () => {
-    const key = getApiKey();
-    const statusEl = document.getElementById('apiKeyStatus');
-    const inputEl = document.getElementById('apiKeyInput');
-    
-    if (key) {
-        if (statusEl) {
-            statusEl.innerHTML = 'CHAVE ATIVA ✅';
-            statusEl.className = 'text-[10px] font-bold text-emerald-400 uppercase tracking-widest text-center pt-1';
-        }
-        if (inputEl) inputEl.value = key;
-    } else {
-        if (statusEl) {
-            statusEl.innerHTML = 'CHAVE NÃO CONFIGURADA ❌';
-            statusEl.className = 'text-[10px] font-bold text-red-400 uppercase tracking-widest text-center pt-1';
-        }
-        if (inputEl) inputEl.value = '';
-    }
-};
-
-// --- NAVEGAÇÃO ---
-
-function setupNavigation() {
-    const navItems = document.querySelectorAll('.nav-item');
-    navItems.forEach(item => {
-        item.addEventListener('click', (e) => {
-            e.preventDefault();
-            const viewId = item.dataset.view;
-            if (!viewId) return;
-
-            navItems.forEach(i => i.classList.remove('active'));
-            item.classList.add('active');
-
-            document.querySelectorAll('.view-panel').forEach(p => p.classList.add('hidden'));
-            const target = document.getElementById(`view-${viewId}`);
-            if (target) target.classList.remove('hidden');
-            
-            const title = document.getElementById('view-title');
-            if (title) title.innerText = item.innerText.trim();
-        });
-    });
-
-    document.getElementById('sidebar-gen-img-btn')?.addEventListener('click', () => {
-        document.querySelector('[data-view="images"]')?.click();
-    });
+:root {
+    --primary: #2563eb;
+    --bg: #050505;
+    --card-bg: #0a0a0a;
+    --border: rgba(255, 255, 255, 0.08);
 }
 
-// --- CHAMADAS DE IA ---
-
-async function handleImageGeneration() {
-    const key = getApiKey();
-    if (!key) {
-        alert("⚠️ ATENÇÃO: Salve sua Gemini API Key primeiro na barra lateral antes de gerar imagens.");
-        document.getElementById('apiKeyInput')?.focus();
-        return;
-    }
-
-    const prompt = document.getElementById('image-prompt')?.value.trim();
-    if (!prompt) {
-        alert("🎨 Escreva uma descrição para a sua imagem.");
-        return;
-    }
-
-    const btn = document.getElementById('btn-generate-image');
-    const loader = document.getElementById('loading-spinner');
-    
-    if (btn) btn.disabled = true;
-    loader?.classList.remove('hidden');
-
-    try {
-        const style = document.getElementById('image-style')?.value || 'cinematic';
-        const ratio = document.getElementById('image-ratio')?.value || '16:9';
-
-        const ai = new GoogleGenAI({ apiKey: key });
-        const fullPrompt = `Cinematic style: ${style}, high quality, hyper-realistic, 8k render, professional lighting, ${prompt}`;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image',
-            contents: { parts: [{ text: fullPrompt }] },
-            config: {
-                imageConfig: { aspectRatio: ratio }
-            }
-        });
-
-        const part = response.candidates[0].content.parts.find(p => p.inlineData);
-        if (!part) throw new Error("A IA não retornou dados de imagem.");
-
-        const imageUrl = `data:image/png;base64,${part.inlineData.data}`;
-        
-        const wrapper = document.getElementById('image-preview-wrapper');
-        const resultImg = document.getElementById('image-result');
-        
-        if (resultImg) resultImg.src = imageUrl;
-        wrapper?.classList.remove('hidden');
-        wrapper?.scrollIntoView({ behavior: 'smooth' });
-
-    } catch (error) {
-        console.error("AI Error:", error);
-        alert("❌ Erro na Geração: " + (error.message || "Erro desconhecido"));
-    } finally {
-        if (btn) btn.disabled = false;
-        loader?.classList.add('hidden');
-    }
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg);
+    color: #f5f5f5;
+    -webkit-font-smoothing: antialiased;
 }
 
-// --- DOWNLOAD DE IMAGEM ---
-
-async function downloadGeneratedImage() {
-    const img = document.getElementById('image-result');
-    if (!img || !img.src || img.src === "") {
-        alert("Nenhuma imagem para baixar.");
-        return;
-    }
-    
-    try {
-        const response = await fetch(img.src);
-        const blob = await response.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        
-        const d = new Date();
-        const pad = (n) => n.toString().padStart(2, '0');
-        const dateStr = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate());
-        const timeStr = pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
-        const filename = `avanco-ai-image-${dateStr}-${timeStr}.png`;
-        
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        
-        document.body.removeChild(link);
-        URL.revokeObjectURL(blobUrl);
-    } catch (e) {
-        console.error("Download fail:", e);
-        alert("Falha ao preparar o arquivo para download.");
-    }
+.gradient-text {
+    background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 
-// --- INICIALIZAÇÃO ---
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #737373;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+}
 
-document.addEventListener('DOMContentLoaded', () => {
-    // Carregar UI inicial
-    updateApiKeyUI();
+.nav-item:hover, .nav-item.active {
+    background: rgba(255, 255, 255, 0.04);
+    color: #fff;
+}
 
-    // Eventos de API Key conforme solicitado no patch urgente
-    document.getElementById("saveApiKeyBtn")?.addEventListener("click", () => {
-        const v = document.getElementById("apiKeyInput").value.trim();
-        if (!v) {
-            alert("⚠️ Digite uma chave antes de salvar.");
-            return;
-        }
-        localStorage.setItem("GEMINI_API_KEY", v);
-        updateApiKeyUI();
-        alert("✅ Chave salva com sucesso!");
-    });
+.nav-item.active {
+    color: #3b82f6;
+    border-left: 3px solid #3b82f6;
+    padding-left: 13px;
+    border-radius: 0 12px 12px 0;
+}
 
-    document.getElementById("clearApiKeyBtn")?.addEventListener("click", () => {
-        localStorage.removeItem("GEMINI_API_KEY");
-        updateApiKeyUI();
-        alert("🗑️ Chave removida.");
-    });
+.animate-in {
+    animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
 
-    // Navegação
-    setupNavigation();
+@keyframes slideIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
 
-    // Eventos de Criação
-    document.getElementById('btn-generate-image')?.addEventListener('click', handleImageGeneration);
-    document.getElementById('btn-download-image')?.addEventListener('click', downloadGeneratedImage);
-    
-    document.getElementById('btn-save-gallery')?.addEventListener('click', () => {
-        alert("Imagem adicionada à sua galeria local!");
-    });
-});
+.custom-scrollbar::-webkit-scrollbar { width: 6px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #262626; }
+
+.hidden { display: none !important; }
+
+button:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
+
+select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23444' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 14px;
+}
+
+.gallery-card {
+    aspect-ratio: 1;
+    background: #0a0a0a;
+    border: 1px solid var(--border);
+    border-radius: 1.5rem;
+    overflow: hidden;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.gallery-card img, .gallery-card video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.gallery-card .overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    padding: 10px;
+}
+
+.gallery-card:hover .overlay { opacity: 1; }
+
+.scene-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 2rem;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    transition: border-color 0.3s ease;
+}
+
+.scene-card:hover { border-color: rgba(59, 130, 246, 0.3); }
+
+.scene-main {
+    display: grid;
+    grid-template-columns: 200px 1fr 120px;
+    gap: 24px;
+    align-items: start;
+}
+
+@media (max-width: 800px) {
+    .scene-main { grid-template-columns: 1fr; }
+    .scene-thumb { width: 100% !important; }
+}
+
+.scene-thumb {
+    width: 200px;
+    aspect-ratio: 16/9;
+    background: #000;
+    border-radius: 1rem;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.scene-thumb img, .scene-thumb video { width: 100%; height: 100%; object-fit: cover; }
+.scene-thumb .badge { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.6); font-size: 8px; padding: 2px 6px; border-radius: 4px; font-weight: 900; z-index: 10; }
+
+.audio-controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    background: rgba(255,255,255,0.03);
+    padding: 12px;
+    border-radius: 1rem;
+    border: 1px solid var(--border);
+}
+
+.toggle-btn {
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 700;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid transparent;
+    transition: all 0.2s;
+    color: #999;
+}
+
+.toggle-btn.active {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: rgba(59, 130, 246, 0.4);
+    color: #3b82f6;
+}
+
+#renderCanvas { background-color: #000; border-radius: 2.5rem; }
